@@ -5,9 +5,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+import { PDFParse } from 'pdf-parse';
 import { query, runQuery } from './db.js';
 import * as digilocker from './digilocker.js';
 
@@ -186,7 +184,7 @@ Return ONLY a strict JSON object (no markdown fences, no extra text) with the fo
   "complianceSummary": "Concise assessment of document authenticity and completeness"
 }`;
 
-  const models = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.1-pro-preview'];
+  const models = ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemma-4-26b-a4b-it', 'gemini-3.7-flash'];
 
   for (const model of models) {
     try {
@@ -253,7 +251,7 @@ Analyze this document text and extract structured details. Return ONLY valid JSO
 DOCUMENT TEXT:
 ${text.substring(0, 4000)}`;
 
-  const models = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+  const models = ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemma-4-26b-a4b-it'];
   for (const m of models) {
     try {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
@@ -384,11 +382,12 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
       // 2. Fall back to pdf-parse for native text extraction if PDF
       if (req.file.mimetype === 'application/pdf' || req.file.originalname?.endsWith('.pdf')) {
         try {
-          const pdfData = await pdfParse(req.file.buffer);
-          textExtracted = pdfData.text || '';
-          documentPages = pdfData.numpages || 1;
+          const parser = new PDFParse({ verbosity: 0 });
+          await parser.load(req.file.buffer);
+          textExtracted = await parser.getText() || '';
+          documentPages = parser.doc?.numPages || 1;
         } catch (pdfErr) {
-          console.warn('pdf-parse could not read text (scanned PDF):', pdfErr.message);
+          console.warn('PDFParse could not read text:', pdfErr.message);
         }
       }
 

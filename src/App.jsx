@@ -54,7 +54,7 @@ const API_BASE =
     : '');
 
 // ─── Disqualification Report Generator & HTML Exporter ────────────────────────
-function downloadDisqualificationMemo(report) {
+function generateDisqualificationHTML(report) {
   const entityName = report.bidder?.company || report.extracted?.entityName || report.entityName || 'Bidder Entity';
   const tenderId = report.bidder?.tenderId || report.bidder?.tender || report.extracted?.tenderRef || report.tenderRef || 'TND-2026-004';
   const score = report.bidder?.score ?? report.complianceScore ?? 45;
@@ -95,7 +95,7 @@ function downloadDisqualificationMemo(report) {
       }
     ];
 
-  const htmlContent = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -117,12 +117,17 @@ function downloadDisqualificationMemo(report) {
   .appeal-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin-top: 30px; font-size: 13px; color: #1e40af; line-height: 1.6; }
   .signature-section { margin-top: 40px; display: flex; justify-content: space-between; align-items: flex-end; padding-top: 20px; border-top: 1px dashed #cbd5e1; font-size: 12px; color: #64748b; }
   .stamp { border: 2px solid #0f172a; padding: 8px 16px; border-radius: 6px; font-weight: 700; color: #0f172a; text-align: center; }
-  @media print { body { padding: 20px; } .no-print { display: none; } }
+  .btn-print { background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+  .btn-print:hover { background: #1d4ed8; }
+  @media print { body { padding: 20px; } .no-print { display: none !important; } }
 </style>
 </head>
 <body>
-  <div class="no-print" style="margin-bottom: 20px; display: flex; gap: 12px;">
-    <button onclick="window.print()" style="background: #2563eb; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; cursor: pointer;">🖨️ Print / Save as PDF</button>
+  <div class="no-print" style="margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+    <div style="font-size: 14px; color: #475569;">
+      📄 <strong>Official Memorandum Preview</strong> • Ready to view or save as PDF
+    </div>
+    <button onclick="window.print()" class="btn-print">🖨️ Print / Save as PDF</button>
   </div>
 
   <div class="header">
@@ -181,7 +186,23 @@ function downloadDisqualificationMemo(report) {
   </div>
 </body>
 </html>`;
+}
 
+function openDisqualificationReport(report) {
+  const html = generateDisqualificationHTML(report);
+  const win = window.open('', '_blank');
+  if (win) {
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  } else {
+    downloadDisqualificationMemo(report);
+  }
+}
+
+function downloadDisqualificationMemo(report) {
+  const htmlContent = generateDisqualificationHTML(report);
+  const entityName = report.bidder?.company || report.extracted?.entityName || report.entityName || 'Bidder_Entity';
   const blob = new Blob([htmlContent], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -309,8 +330,11 @@ function DisqualificationReportModal({ report, onClose }) {
         <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderTop: '1px solid var(--border)' }}>
           <button className="connect-btn" onClick={onClose}>Close Preview</button>
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button className="primary-btn" onClick={() => downloadDisqualificationMemo(report)}>
-              <Download size={15} /> Download Official Memo (.html)
+            <button className="primary-btn" onClick={() => openDisqualificationReport(report)}>
+              <ExternalLink size={15} /> Open & Print Visual PDF Memo
+            </button>
+            <button className="connect-btn" onClick={() => downloadDisqualificationMemo(report)}>
+              <Download size={15} /> Save .html File
             </button>
           </div>
         </div>
@@ -373,9 +397,18 @@ function VerificationView({ extractionResult, setActiveTab, onOpenDisqualificati
                 </p>
               </div>
             </div>
-            <button className="danger-btn" onClick={() => onOpenDisqualificationReport && onOpenDisqualificationReport(r)}>
-              <Download size={15} /> Download Disqualification Report
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                className="primary-btn" 
+                style={{ background: '#dc2626', borderColor: '#ef4444' }} 
+                onClick={() => openDisqualificationReport(r)}
+              >
+                <ExternalLink size={15} /> Open Visual Report & Print
+              </button>
+              <button className="danger-btn" onClick={() => onOpenDisqualificationReport && onOpenDisqualificationReport(r)}>
+                <FileText size={15} /> View Causes
+              </button>
+            </div>
           </div>
         )}
 
@@ -417,9 +450,9 @@ function VerificationView({ extractionResult, setActiveTab, onOpenDisqualificati
             <button 
               className={isFailed ? "danger-btn" : "connect-btn"}
               style={{ padding: '10px 16px', height: 'fit-content' }}
-              onClick={() => onOpenDisqualificationReport && onOpenDisqualificationReport(r)}
+              onClick={() => openDisqualificationReport(r)}
             >
-              <Download size={15} /> {isFailed ? "Download Failure Report" : "Download Audit Report"}
+              <ExternalLink size={15} /> {isFailed ? "Open Failure Memo & Print" : "Open Audit Memo"}
             </button>
           </div>
         </div>
