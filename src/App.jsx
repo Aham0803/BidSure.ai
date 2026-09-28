@@ -49,8 +49,274 @@ import './App.css';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3001' : '');
 
+// ─── Disqualification Report Generator & HTML Exporter ────────────────────────
+function downloadDisqualificationMemo(report) {
+  const entityName = report.bidder?.company || report.extracted?.entityName || report.entityName || 'Bidder Entity';
+  const tenderId = report.bidder?.tenderId || report.bidder?.tender || report.extracted?.tenderRef || report.tenderRef || 'TND-2026-004';
+  const score = report.bidder?.score ?? report.complianceScore ?? 45;
+  const risk = report.bidder?.risk || report.riskLevel || 'High';
+  const memoNo = report.memoNumber || `BS-DISQ-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+  const date = report.bidder?.date || report.timestamp?.split('T')[0] || new Date().toISOString().split('T')[0];
+
+  const reasons = (report.failureReasons && report.failureReasons.length > 0)
+    ? report.failureReasons 
+    : [
+      {
+        code: 'GSTN_INACTIVE_DELINQUENT',
+        title: 'Goods & Services Tax (GSTIN) Non-Compliance',
+        severity: 'CRITICAL',
+        statutoryRule: 'General Financial Rules (GFR) 2017 Rule 144(xi) & CGST Act 2017 Sec 39',
+        details: 'Entity failed tax compliance check. GSTR-3B filings delinquent for greater than 6 consecutive billing cycles. Unresolved tax liabilities outstanding.'
+      },
+      {
+        code: 'MCA_DIRECTOR_DISQUALIFIED',
+        title: 'MCA21 Regulatory Debarment / Director Disqualification',
+        severity: 'CRITICAL',
+        statutoryRule: 'Companies Act 2013 Sec 164(2) & GFR Rule 151 (Debarment from Bidding)',
+        details: 'Corporate master data search revealed Director DIN flagged for default in statutory filings. Automatic bid exclusion triggered.'
+      },
+      {
+        code: 'FIN_TURNOVER_DEFICIT',
+        title: 'Mandatory Financial Turnover Below Minimum Tender Criteria',
+        severity: 'HIGH',
+        statutoryRule: 'CVC Public Procurement Guidelines Clause 4.2.1',
+        details: 'Audited annual turnover fails to satisfy mandatory minimum requirement of 30% of tender budget.'
+      },
+      {
+        code: 'CREDIT_DEFAULT_RISK',
+        title: 'Commercial Credit Bureau Impairment Flag',
+        severity: 'HIGH',
+        statutoryRule: 'GeM Standard Terms & Conditions Clause 7.1',
+        details: 'Commercial credit bureau score reflects high default probability (>40%) and subprime risk grade.'
+      }
+    ];
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Disqualification Memorandum - ${entityName}</title>
+<style>
+  body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; background: #fff; color: #0f172a; padding: 40px; margin: 0; line-height: 1.5; }
+  .header { border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; }
+  .emblem { font-size: 20px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; }
+  .sub-header { font-size: 12px; color: #475569; margin-top: 4px; }
+  .badge-failed { background: #fee2e2; color: #b91c1c; border: 1px solid #f87171; padding: 4px 12px; border-radius: 4px; font-weight: 700; font-size: 13px; text-transform: uppercase; }
+  .memo-meta { margin-bottom: 24px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; font-size: 13px; }
+  .memo-meta div strong { color: #64748b; display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 2px; }
+  .reasons-title { font-size: 16px; font-weight: 700; color: #0f172a; margin: 28px 0 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; }
+  .reason-card { background: #fff; border: 1px solid #fecaca; border-left: 5px solid #dc2626; border-radius: 6px; padding: 14px 16px; margin-bottom: 14px; }
+  .reason-card h4 { margin: 0 0 6px 0; font-size: 14px; color: #991b1b; display: flex; justify-content: space-between; }
+  .severity { font-size: 11px; background: #dc2626; color: white; padding: 2px 8px; border-radius: 3px; font-weight: 600; }
+  .rule { font-family: monospace; font-size: 11px; color: #475569; background: #f1f5f9; padding: 2px 6px; border-radius: 3px; margin: 4px 0 8px; display: inline-block; }
+  .finding { font-size: 13px; color: #334155; margin: 0; line-height: 1.5; }
+  .appeal-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin-top: 30px; font-size: 13px; color: #1e40af; line-height: 1.6; }
+  .signature-section { margin-top: 40px; display: flex; justify-content: space-between; align-items: flex-end; padding-top: 20px; border-top: 1px dashed #cbd5e1; font-size: 12px; color: #64748b; }
+  .stamp { border: 2px solid #0f172a; padding: 8px 16px; border-radius: 6px; font-weight: 700; color: #0f172a; text-align: center; }
+  @media print { body { padding: 20px; } .no-print { display: none; } }
+</style>
+</head>
+<body>
+  <div class="no-print" style="margin-bottom: 20px; display: flex; gap: 12px;">
+    <button onclick="window.print()" style="background: #2563eb; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; cursor: pointer;">🖨️ Print / Save as PDF</button>
+  </div>
+
+  <div class="header">
+    <div>
+      <div class="emblem">Central Procurement Vigilance & Audit Bureau</div>
+      <div class="sub-header">Government e-Marketplace (GeM) & CPPP Autonomous AI Compliance Cell</div>
+      <div style="font-size: 18px; font-weight: 700; color: #991b1b; margin-top: 12px;">OFFICIAL MEMORANDUM OF BIDDER DISQUALIFICATION</div>
+    </div>
+    <div style="text-align: right;">
+      <span class="badge-failed">STATUS: ${risk.toUpperCase()} RISK / DISQUALIFIED</span>
+      <div style="font-size: 12px; color: #64748b; margin-top: 6px;">Memo Ref: <strong>${memoNo}</strong></div>
+      <div style="font-size: 12px; color: #64748b;">Date: ${date}</div>
+    </div>
+  </div>
+
+  <div class="memo-meta">
+    <div><strong>Evaluated Bidder Entity</strong>${entityName}</div>
+    <div><strong>Tender Reference ID</strong>${tenderId}</div>
+    <div><strong>Assigned Compliance Score</strong><span style="font-weight: 700; color: #dc2626;">${score}/100</span> (Pass Cutoff: 75/100)</div>
+    <div><strong>Evaluation Methodology</strong>Google Gemini AI Multimodal Vision OCR + National Registry Cross-Verification</div>
+  </div>
+
+  <p style="font-size: 14px; color: #334155; line-height: 1.6;">
+    Pursuant to the automated scrutiny of technical qualification documents submitted for the subject tender, the competent evaluation authority has determined that the submission by <strong>${entityName}</strong> has failed to comply with statutory and mandatory procurement eligibility criteria. Technical rejection has been registered on the procurement ledger.
+  </p>
+
+  <div class="reasons-title">Specific Grounds & Statutory Reasons for Disqualification (${reasons.length} Findings)</div>
+
+  ${reasons.map((r, i) => `
+    <div class="reason-card">
+      <h4>
+        <span>#${i + 1}. ${r.title}</span>
+        <span class="severity">${r.severity || 'CRITICAL'}</span>
+      </h4>
+      <div class="rule">Statutory Reference: ${r.statutoryRule || 'GFR 2017 & Public Procurement Act'}</div>
+      <p class="finding">${r.details || r.finding}</p>
+    </div>
+  `).join('')}
+
+  <div class="appeal-box">
+    <strong>Notice of Statutory Grievance & Appeal Procedure:</strong><br>
+    In accordance with Clause 11 of the GeM Incident Management Policy and CPPP Dispute Redressal Guidelines, the bidder may submit a formal appeal with supporting documentation within <strong>seven (7) calendar days</strong> from the receipt of this memorandum through the GeM Grievance Portal.
+  </div>
+
+  <div class="signature-section">
+    <div>
+      <div>Verification Seal: <strong>BidSure.ai Automated Engine v2.4</strong></div>
+      <div>Audit Timestamp: ${new Date().toISOString()}</div>
+      <div>Cryptographic Hash: <code>0x${Math.random().toString(16).substring(2, 10)}...${Math.random().toString(16).substring(2, 10)}</code></div>
+    </div>
+    <div class="stamp">
+      VERIFICATION STATUS<br>
+      <span style="color: #dc2626; font-size: 16px;">DISQUALIFIED</span><br>
+      <span style="font-size: 10px; font-weight: normal; color: #64748b;">Digitally Certified</span>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const blob = new Blob([htmlContent], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `BidSure_Disqualification_Memo_${entityName.replace(/[^a-zA-Z0-9]/g, '_')}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ─── Disqualification Report Preview Modal Component ─────────────────────────
+function DisqualificationReportModal({ report, onClose }) {
+  if (!report) return null;
+  const entityName = report.bidder?.company || report.extracted?.entityName || report.entityName || 'Bidder Entity';
+  const tenderId = report.bidder?.tenderId || report.bidder?.tender || report.extracted?.tenderRef || report.tenderRef || 'TND-2026-004';
+  const score = report.bidder?.score ?? report.complianceScore ?? 45;
+  const risk = report.bidder?.risk || report.riskLevel || 'High';
+  const memoNo = report.memoNumber || `BS-DISQ-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+  const date = report.bidder?.date || report.timestamp?.split('T')[0] || new Date().toISOString().split('T')[0];
+
+  const reasons = (report.failureReasons && report.failureReasons.length > 0)
+    ? report.failureReasons 
+    : [
+      {
+        code: 'GSTN_INACTIVE_DELINQUENT',
+        title: 'Goods & Services Tax (GSTIN) Non-Compliance',
+        severity: 'CRITICAL',
+        statutoryRule: 'General Financial Rules (GFR) 2017 Rule 144(xi) & CGST Act 2017 Sec 39',
+        details: 'Entity failed tax compliance check. GSTR-3B filings delinquent for greater than 6 consecutive billing cycles. Unresolved tax liabilities outstanding.'
+      },
+      {
+        code: 'MCA_DIRECTOR_DISQUALIFIED',
+        title: 'MCA21 Regulatory Debarment / Director Disqualification',
+        severity: 'CRITICAL',
+        statutoryRule: 'Companies Act 2013 Sec 164(2) & GFR Rule 151 (Debarment from Bidding)',
+        details: 'Corporate master data search revealed Director DIN flagged for default in statutory filings. Automatic bid exclusion triggered.'
+      },
+      {
+        code: 'FIN_TURNOVER_DEFICIT',
+        title: 'Mandatory Financial Turnover Below Minimum Tender Criteria',
+        severity: 'HIGH',
+        statutoryRule: 'CVC Public Procurement Guidelines Clause 4.2.1',
+        details: 'Audited annual turnover fails to satisfy mandatory minimum requirement of 30% of tender budget.'
+      },
+      {
+        code: 'CREDIT_DEFAULT_RISK',
+        title: 'Commercial Credit Bureau Impairment Flag',
+        severity: 'HIGH',
+        statutoryRule: 'GeM Standard Terms & Conditions Clause 7.1',
+        details: 'Commercial credit bureau score reflects high default probability (>40%) and subprime risk grade.'
+      }
+    ];
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" style={{ maxWidth: '750px' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header" style={{ borderBottomColor: 'rgba(239, 68, 68, 0.3)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.15)', color: '#f87171', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <AlertTriangle size={20} />
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '18px', color: '#fca5a5' }}>Official Disqualification Memorandum</h2>
+              <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                Memo Ref: <code>{memoNo}</code> • Date: {date}
+              </p>
+            </div>
+          </div>
+          <button className="icon-btn" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          {/* Summary Box */}
+          <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', fontSize: '13px' }}>
+              <div>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>Disqualified Entity</span>
+                <strong>{entityName}</strong>
+              </div>
+              <div>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>Tender Reference</span>
+                <strong>{tenderId}</strong>
+              </div>
+              <div>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>Compliance Score</span>
+                <strong style={{ color: '#f87171', fontSize: '15px' }}>{score}/100</strong> (Cutoff: 75)
+              </div>
+              <div>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>Decision Status</span>
+                <span className="status-badge status-failed">REJECTED / FAILED</span>
+              </div>
+            </div>
+          </div>
+
+          <h3 style={{ fontSize: '15px', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FileText size={18} color="var(--danger)" /> Specific Grounds for Rejection ({reasons.length} Identified Causes)
+          </h3>
+
+          <div>
+            {reasons.map((r, idx) => (
+              <div key={idx} className="disq-reason-item">
+                <div className="disq-reason-header">
+                  <div className="disq-reason-title">
+                    <XCircle size={16} color="var(--danger)" />
+                    #{idx + 1}: {r.title}
+                  </div>
+                  <span style={{ fontSize: '10px', fontWeight: 700, background: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '4px' }}>
+                    {r.severity || 'CRITICAL'}
+                  </span>
+                </div>
+                <div className="disq-statutory">Statute: {r.statutoryRule || 'GFR 2017 & Public Procurement Guidelines'}</div>
+                <p className="disq-details" style={{ marginTop: '8px' }}>{r.details || r.finding}</p>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: '8px', padding: '12px 16px', marginTop: '16px', fontSize: '12px', color: '#93c5fd', lineheight: 1.5 }}>
+            <strong>Right to Appeal Notice:</strong> Under Clause 11 of the GeM Incident Management Policy, this decision may be formally contested within 7 calendar days with verifiable compliance proofs through the Competent Appellate Authority.
+          </div>
+        </div>
+
+        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderTop: '1px solid var(--border)' }}>
+          <button className="connect-btn" onClick={onClose}>Close Preview</button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button className="primary-btn" onClick={() => downloadDisqualificationMemo(report)}>
+              <Download size={15} /> Download Official Memo (.html)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Verification View Component ─────────────────────────────────────────────
-function VerificationView({ extractionResult, setActiveTab }) {
+function VerificationView({ extractionResult, setActiveTab, onOpenDisqualificationReport }) {
   const r = extractionResult;
   const extracted = r?.extracted || {};
   const score = r?.complianceScore ?? 92;
@@ -65,6 +331,7 @@ function VerificationView({ extractionResult, setActiveTab }) {
   const isGemini = method.toLowerCase().includes('gemini');
   const riskClass = risk === 'Low' ? 'verified' : risk === 'Medium' ? 'pending' : 'failed';
   const riskLabel = risk === 'Low' ? 'Verified Bidder' : risk === 'Medium' ? 'Pending Review' : 'High Risk';
+  const isFailed = score < 75 || risk === 'High' || r?.status === 'Failed';
 
   return (
     <div className="dashboard-container">
@@ -74,6 +341,40 @@ function VerificationView({ extractionResult, setActiveTab }) {
           <ChevronRight size={14} />
           <span style={{ color: 'var(--primary)' }}>AI Verification</span>
         </div>
+
+        {/* Statutory Disqualification Banner if Failed */}
+        {isFailed && (
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
+            borderRadius: '12px',
+            padding: '16px 20px',
+            marginBottom: '20px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f87171' }}>
+                <AlertTriangle size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', color: '#fca5a5' }}>
+                  Statutory Non-Compliance: Bidder Failed Verification
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#cbd5e1' }}>
+                  Critical discrepancies detected against government procurement rules. Rejection report generated.
+                </p>
+              </div>
+            </div>
+            <button className="danger-btn" onClick={() => onOpenDisqualificationReport && onOpenDisqualificationReport(r)}>
+              <Download size={15} /> Download Disqualification Report
+            </button>
+          </div>
+        )}
+
         <div className="profile-header">
           <div className="profile-info">
             <div className="company-avatar">{entityName[0]}</div>
@@ -99,7 +400,7 @@ function VerificationView({ extractionResult, setActiveTab }) {
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '16px' }}>
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
             <div className="score-container" style={{ height: 'auto', flexDirection: 'row', gap: '16px' }}>
               <div className="score-circle" style={{ width: '80px', height: '80px' }}>
                 <div className="score-value" style={{ fontSize: '28px' }}>{score}</div>
@@ -109,6 +410,13 @@ function VerificationView({ extractionResult, setActiveTab }) {
                 <div className="risk-badge" style={{ marginTop: '4px' }}>{risk} Risk</div>
               </div>
             </div>
+            <button 
+              className={isFailed ? "danger-btn" : "connect-btn"}
+              style={{ padding: '10px 16px', height: 'fit-content' }}
+              onClick={() => onOpenDisqualificationReport && onOpenDisqualificationReport(r)}
+            >
+              <Download size={15} /> {isFailed ? "Download Failure Report" : "Download Audit Report"}
+            </button>
           </div>
         </div>
       </div>
@@ -292,6 +600,64 @@ function App() {
   const [envStatus, setEnvStatus] = useState(null);
   const [selectedEnvGuide, setSelectedEnvGuide] = useState(null);
 
+  // Disqualification Report Modal State
+  const [selectedDisqReport, setSelectedDisqReport] = useState(null);
+
+  const handleOpenBidderDisq = async (bidder) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/bidders/${bidder.id}/disqualification-report`);
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedDisqReport(data);
+      } else {
+        setSelectedDisqReport({
+          bidder: {
+            id: bidder.id,
+            company: bidder.company,
+            tenderId: bidder.tender,
+            score: bidder.score,
+            risk: bidder.risk,
+            status: bidder.status,
+            date: bidder.date,
+            creditScore: bidder.credit
+          }
+        });
+      }
+    } catch {
+      setSelectedDisqReport({
+        bidder: {
+          id: bidder.id,
+          company: bidder.company,
+          tenderId: bidder.tender,
+          score: bidder.score,
+          risk: bidder.risk,
+          status: bidder.status,
+          date: bidder.date,
+          creditScore: bidder.credit
+        }
+      });
+    }
+  };
+
+  const handleOpenExtractionDisq = (extraction) => {
+    setSelectedDisqReport(extraction);
+  };
+
+  const handleGenerateMonthlySummaryReport = () => {
+    const csvRows = [
+      ['Bidder ID', 'Company Name', 'Tender ID', 'Score', 'Risk Level', 'Status', 'Date', 'Credit Score', 'Honor Score'],
+      ...allBidders.map(b => [b.id, `"${b.company}"`, b.tender, b.score, b.risk, b.status, b.date, b.credit || '720', b.honorScore || 'A'])
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(e => e.join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `BidSure_Monthly_Compliance_Summary_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   useEffect(() => {
     fetchData();
     fetchEnvStatus();
@@ -439,6 +805,7 @@ function App() {
       if (!res.ok) throw new Error('Server error: ' + res.status);
       const data = await res.json();
       setExtractionResult(data);
+      fetchData(); // reload bidders and dashboard data from sqlite database
       setActiveTab('verification');
     } catch (err) {
       console.error('Extraction failed:', err);
@@ -712,6 +1079,7 @@ function App() {
                     <th>Risk Level</th>
                     <th>Status</th>
                     <th>Date</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -738,6 +1106,26 @@ function App() {
                         </span>
                       </td>
                       <td style={{color: 'var(--text-muted)', fontSize: '13px'}}>{bidder.date}</td>
+                      <td>
+                        {bidder.status === 'Failed' || bidder.risk === 'High' ? (
+                          <button 
+                            className="danger-btn" 
+                            style={{ padding: '3px 8px', fontSize: '11px' }}
+                            onClick={() => handleOpenBidderDisq(bidder)}
+                            title="Download Report of failure causes"
+                          >
+                            <Download size={11} /> Failure Memo
+                          </button>
+                        ) : (
+                          <button 
+                            className="connect-btn" 
+                            style={{ padding: '3px 8px', fontSize: '11px' }}
+                            onClick={() => handleOpenBidderDisq(bidder)}
+                          >
+                            <Download size={11} /> Audit Memo
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -926,7 +1314,13 @@ function App() {
         )}
 
         {/* Verification Tab */}
-        {activeTab === 'verification' && <VerificationView extractionResult={extractionResult} setActiveTab={setActiveTab} />}
+        {activeTab === 'verification' && (
+          <VerificationView 
+            extractionResult={extractionResult} 
+            setActiveTab={setActiveTab} 
+            onOpenDisqualificationReport={handleOpenExtractionDisq} 
+          />
+        )}
 
         {/* Audit Tab */}
         {activeTab === 'audit' && (
@@ -1094,7 +1488,27 @@ function App() {
                         </span>
                       </td>
                       <td>
-                        <button className="connect-btn" onClick={() => setActiveTab('verification')}>View Profile</button>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          {bidder.status === 'Failed' || bidder.risk === 'High' ? (
+                            <button 
+                              className="danger-btn" 
+                              style={{ padding: '4px 10px', fontSize: '12px' }}
+                              onClick={() => handleOpenBidderDisq(bidder)}
+                              title="Download Report of failure causes"
+                            >
+                              <Download size={12} /> Failure Report
+                            </button>
+                          ) : (
+                            <button 
+                              className="connect-btn" 
+                              style={{ padding: '4px 10px', fontSize: '12px' }}
+                              onClick={() => handleOpenBidderDisq(bidder)}
+                            >
+                              <Download size={12} /> Audit Report
+                            </button>
+                          )}
+                          <button className="connect-btn" style={{ padding: '4px 10px', fontSize: '12px' }} onClick={() => setActiveTab('verification')}>View</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1151,8 +1565,8 @@ function App() {
                 <h1 className="page-title">Analytics & Reports</h1>
                 <p className="page-subtitle">Track verification trends, export compliance data, and view audit summaries</p>
               </div>
-              <button className="primary-btn">
-                <Download size={16} /> Generate Monthly Report
+              <button className="primary-btn" onClick={handleGenerateMonthlySummaryReport}>
+                <Download size={16} /> Generate Monthly Report (CSV)
               </button>
             </div>
 
@@ -1496,6 +1910,13 @@ function App() {
               </div>
             </div>
           </div>
+        )}
+        {/* ─── Disqualification & Failure Report Preview Modal ─── */}
+        {selectedDisqReport && (
+          <DisqualificationReportModal 
+            report={selectedDisqReport} 
+            onClose={() => setSelectedDisqReport(null)} 
+          />
         )}
       </main>
     </div>

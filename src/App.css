@@ -951,3 +951,80 @@ tr:hover {
   border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
+/* Disqualification & Failure Report Styling */
+.disq-reason-item {
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-left: 4px solid var(--danger);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.disq-reason-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.disq-reason-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #fca5a5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.disq-statutory {
+  font-size: 11px;
+  color: #94a3b8;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-top: 6px;
+  font-family: monospace;
+}
+.disq-details {
+  font-size: 13px;
+  color: #e2e8f0;
+  line-height: 1.5;
+  margin: 0;
+}
+.danger-btn {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+.danger-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: white;
+  border-color: #ef4444;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-report-container, .print-report-container * {
+    visibility: visible;
+  }
+  .print-report-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    color: black !important;
+    background: white !important;
+  }
+}
+
+
