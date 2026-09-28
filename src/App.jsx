@@ -47,7 +47,11 @@ import {
 } from 'recharts';
 import './App.css';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3001' : '');
+const API_BASE = 
+  import.meta.env.VITE_API_URL || 
+  (typeof window !== 'undefined' && window.location.port !== '3001' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:3001' 
+    : '');
 
 // ─── Disqualification Report Generator & HTML Exporter ────────────────────────
 function downloadDisqualificationMemo(report) {
