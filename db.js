@@ -1,24 +1,24 @@
-import sqlite3 from 'sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = join(__dirname, 'database.sqlite');
 
-// Initialize DB
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error connecting to database', err);
-  } else {
-    console.log('Connected to SQLite database.');
-    initDb();
-  }
-});
+// Initialize DB using Node's native SQLite engine (no native binary / glibc compilation issues)
+let db;
+try {
+  db = new DatabaseSync(dbPath);
+  console.log('Connected to SQLite database via native node:sqlite.');
+  initDb();
+} catch (err) {
+  console.error('Error connecting to database via node:sqlite:', err);
+}
 
 function initDb() {
-  db.serialize(() => {
+  try {
     // Create tables
-    db.run(`CREATE TABLE IF NOT EXISTS bidders (
+    db.exec(`CREATE TABLE IF NOT EXISTS bidders (
       id TEXT PRIMARY KEY,
       company TEXT,
       tender TEXT,
@@ -31,7 +31,7 @@ function initDb() {
       honorScore TEXT
     )`);
 
-    db.run(`CREATE TABLE IF NOT EXISTS tenders (
+    db.exec(`CREATE TABLE IF NOT EXISTS tenders (
       id TEXT PRIMARY KEY,
       title TEXT,
       department TEXT,
@@ -41,12 +41,13 @@ function initDb() {
     )`);
 
     // Check if empty, then seed
-    db.get("SELECT COUNT(*) AS count FROM bidders", (err, row) => {
-      if (row.count === 0) {
-        seedData();
-      }
-    });
-  });
+    const countRow = db.prepare("SELECT COUNT(*) AS count FROM bidders").get();
+    if (!countRow || countRow.count === 0) {
+      seedData();
+    }
+  } catch (err) {
+    console.error('Error initializing SQLite tables:', err);
+  }
 }
 
 function seedData() {
@@ -67,37 +68,29 @@ function seedData() {
   ];
 
   const insertBidder = db.prepare("INSERT INTO bidders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-  bidders.forEach(b => {
+  for (const b of bidders) {
     insertBidder.run(b.id, b.company, b.tender, b.score, b.risk, b.status, b.date, b.experience, b.credit, b.honorScore);
-  });
-  insertBidder.finalize();
+  }
 
   const insertTender = db.prepare("INSERT INTO tenders VALUES (?, ?, ?, ?, ?, ?)");
-  tenders.forEach(t => {
+  for (const t of tenders) {
     insertTender.run(t.id, t.title, t.department, t.budget, t.bids, t.deadline);
-  });
-  insertTender.finalize();
+  }
   
   console.log('Database seeded successfully.');
 }
 
-// Helper function to convert callback to promise
-export const query = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
+// Helper function to convert queries to promises matching existing signatures
+export const query = async (sql, params = []) => {
+  const stmt = db.prepare(sql);
+  const rows = stmt.all(...params);
+  return rows.map(r => ({ ...r }));
 };
 
-export const runQuery = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve({ id: this.lastID, changes: this.changes });
-    });
-  });
+export const runQuery = async (sql, params = []) => {
+  const stmt = db.prepare(sql);
+  const result = stmt.run(...params);
+  return { id: result.lastInsertRowid, changes: result.changes };
 };
 
 export default db;
